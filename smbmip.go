@@ -12,15 +12,25 @@ import (
 
 func main() {
 	port := flag.Int("port", 8080, "tcp port to listen to")
+	geoliteCityDB := flag.String("geocity", "/var/lib/GeoIP/GeoLite2-City.mmdb", "Path to GeoLite2 City Database")
+	geoliteASNDB := flag.String("geoasn", "/var/lib/GeoIP/GeoLite2-ASN.mmdb", "Path to GeoLite2 ASN Database")
 
 	flag.Parse()
 
-	db, err := geoip2.Open("/var/lib/GeoIP/GeoLite2-City.mmdb")
+	dbCity, err := geoip2.Open(*geoliteCityDB)
 	if err != nil {
 		fmt.Println("Unable to init GeoDB, GeoTrace disabled:", err.Error())
-		db = nil
+		dbCity = nil
 	} else {
-		defer db.Close()
+		defer dbCity.Close()
+	}
+
+	dbASN, err := geoip2.Open(*geoliteASNDB)
+	if err != nil {
+		fmt.Println("Unable to init GeoDB, GeoTrace disabled:", err.Error())
+		dbASN = nil
+	} else {
+		defer dbASN.Close()
 	}
 
 	ln, err := net.Listen("tcp", ":"+strconv.Itoa(*port))
@@ -39,7 +49,7 @@ func main() {
 			fmt.Println("Error accepting connection : " + err.Error())
 			os.Exit(1)
 		}
-		go handleConnection(conn, db)
+		go handleConnection(conn, dbCity, dbASN)
 	}
 }
 
@@ -47,6 +57,8 @@ type GeoLoc struct {
 	Country string `json:"country"`
 	City    string `json:"city"`
 	State   string `json:"state"`
+	ASN     string `json:"AS"`
+	ASOrg   string `json:"AS_Org_Name"`
 }
 type Connection struct {
 	Name string `json:"marbuk"`
@@ -55,22 +67,34 @@ type Connection struct {
 }
 
 // Handles incoming requests.
-func handleConnection(conn net.Conn, db *geoip2.Reader) {
+func handleConnection(conn net.Conn, dbCity *geoip2.Reader, dbASN *geoip2.Reader) {
 	var thisConn Connection
 
 	thisConn.Name = "sbmip"
 
 	thisConn.IP = conn.RemoteAddr().(*net.TCPAddr).IP
 
-	if db != nil {
+	if dbCity != nil {
 		// If you are using strings that may be invalid, check that ip is not nil
-		record, err := db.City(thisConn.IP)
+		record, err := dbCity.City(thisConn.IP)
 		if err != nil {
 			fmt.Println("GeoLoc Failed: " + err.Error())
 		} else {
 			thisConn.Geo.City = record.City.Names["en"]
 			thisConn.Geo.Country = record.Country.Names["en"]
-			//thisConn.Geo.State = record.Subdivisions[0].Names["en"]
+			if len(record.Subdivisions) > 0 {
+				thisConn.Geo.State = record.Subdivisions[0].Names["en"]
+			}
+		}
+	}
+	if dbASN != nil {
+		// If you are using strings that may be invalid, check that ip is not nil
+		record, err := dbASN.ASN(thisConn.IP)
+		if err != nil {
+			fmt.Println("ASN GeoLoc Failed: " + err.Error())
+		} else {
+			thisConn.Geo.ASN = "AS" + strconv.FormatUint(uint64(record.AutonomousSystemNumber), 10)
+			thisConn.Geo.ASOrg = record.AutonomousSystemOrganization
 		}
 	}
 
