@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -9,9 +10,10 @@ import (
 )
 
 func main() {
-	var port int = 8080
+	port := flag.Int("port", 8080, "tcp port to listen to")
 
-	ln, err := net.Listen("tcp", ":"+strconv.Itoa(port))
+	flag.Parse ()
+	ln, err := net.Listen("tcp", ":"+strconv.Itoa(*port))
 	if err != nil {
 		// handle error
 		fmt.Println("Error listening:", err.Error())
@@ -19,7 +21,7 @@ func main() {
 	}
 	defer ln.Close()
 
-	fmt.Println("Listening on port " + strconv.Itoa(port))
+	fmt.Println("Listening on port " + strconv.Itoa(*port))
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
