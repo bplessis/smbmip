@@ -10,14 +10,32 @@ import (
 	"strconv"
 )
 
+type GeoLoc struct {
+	Country string `json:"country"`
+	City    string `json:"city"`
+	State   string `json:"state"`
+	ASN     string `json:"AS"`
+	ASOrg   string `json:"AS_Org_Name"`
+}
+type Connection struct {
+	Name string `json:"marbuk"`
+	IP   net.IP `json:"ip"`
+	Geo  GeoLoc `json:"geoloc"`
+}
+
+var dbCity *geoip2.Reader
+var dbASN *geoip2.Reader
+
 func main() {
+	var err error
+
 	port := flag.Int("port", 8080, "tcp port to listen to")
 	geoliteCityDB := flag.String("geocity", "/var/lib/GeoIP/GeoLite2-City.mmdb", "Path to GeoLite2 City Database")
 	geoliteASNDB := flag.String("geoasn", "/var/lib/GeoIP/GeoLite2-ASN.mmdb", "Path to GeoLite2 ASN Database")
 
 	flag.Parse()
 
-	dbCity, err := geoip2.Open(*geoliteCityDB)
+	dbCity, err = geoip2.Open(*geoliteCityDB)
 	if err != nil {
 		fmt.Println("Unable to init GeoDB, GeoTrace disabled:", err.Error())
 		dbCity = nil
@@ -25,7 +43,7 @@ func main() {
 		defer dbCity.Close()
 	}
 
-	dbASN, err := geoip2.Open(*geoliteASNDB)
+	dbASN, err = geoip2.Open(*geoliteASNDB)
 	if err != nil {
 		fmt.Println("Unable to init GeoDB, GeoTrace disabled:", err.Error())
 		dbASN = nil
@@ -49,25 +67,12 @@ func main() {
 			fmt.Println("Error accepting connection : " + err.Error())
 			os.Exit(1)
 		}
-		go handleConnection(conn, dbCity, dbASN)
+		go handleConnection(conn)
 	}
 }
 
-type GeoLoc struct {
-	Country string `json:"country"`
-	City    string `json:"city"`
-	State   string `json:"state"`
-	ASN     string `json:"AS"`
-	ASOrg   string `json:"AS_Org_Name"`
-}
-type Connection struct {
-	Name string `json:"marbuk"`
-	IP   net.IP `json:"ip"`
-	Geo  GeoLoc `json:"geoloc"`
-}
-
 // Handles incoming requests.
-func handleConnection(conn net.Conn, dbCity *geoip2.Reader, dbASN *geoip2.Reader) {
+func handleConnection(conn net.Conn) {
 	var thisConn Connection
 
 	thisConn.Name = "sbmip"
